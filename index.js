@@ -122,7 +122,16 @@ async function getAppropriateDriverVersion() {
   if (Number(cmainver) != Number(dmainver)) {
     console.log(`Driver version ${dmainver} not equal to Chrome version ${cmainver}; fetching appropriate version...`);
     let compatibleDriverVer = await simpleGet(`http://chromedriver.storage.googleapis.com/LATEST_RELEASE_${cmainver}`);
-    let dlLink = `http://chromedriver.storage.googleapis.com/${compatibleDriverVer}/chromedriver_mac64.zip`;
+    let dlLink;
+    if(process.platform == 'darwin') {
+      dlLink = `http://chromedriver.storage.googleapis.com/${compatibleDriverVer}/chromedriver_mac64.zip`;
+    }
+    else if(process.platform == 'win32') {
+      dlLink = `http://chromedriver.storage.googleapis.com/${compatibleDriverVer}/chromedriver_win32.zip`;
+    }
+    else {
+      dlLink = `http://chromedriver.storage.googleapis.com/${compatibleDriverVer}/chromedriver_linux64.zip`;
+    }
     fs.mkdirSync('./temp', { recursive: true });
     console.log(`Found latest Driver version of ${compatibleDriverVer}, downloading from ${dlLink}`);
     await download(dlLink, './temp/chromedriver.zip');
@@ -192,9 +201,9 @@ async function getChromeVersion() {
           reject(stderr); return;
         }
         if (stdout) {
-          // const prefix = 'Google Chrome';
-          // resolve(stdout.slice(prefix.length).trim());
-          resolve(stdout);
+          const prefix = 'REG_SZ';
+          let res = stdout.match(/REG_SZ[^(;)]+/)[0].slice(prefix.length).trim();
+          resolve(res);
         }
       });
     });
