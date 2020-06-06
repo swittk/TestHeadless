@@ -1,0 +1,15 @@
+{
+  "name": "testheadless",
+  "version": "0.1.0",
+  "description": "test headless browser",
+  "main": "index.js",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "author": "Swittk",
+  "license": "ISC",
+  "dependencies": {
+    "selenium-webdriver": "^4.0.0-alpha.7",
+    "unzipper": "^0.10.11"
+  }
+}
