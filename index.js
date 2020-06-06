@@ -232,16 +232,41 @@ async function getChromeDriverVersion() {
   });
 }
 
-async function addFolderToPathVariableWin(folder) {
-  return new Promise((resolve, reject) => {
-    exec(`setx "%path%;${folder}"`, (error, stdout, stderr) => {
+
+/**
+ * @returns {Promise.<String>}
+ */
+async function getWinUserPATHVar() {
+  return new Promise((resolve, reject)=>{
+    let command = `For /F "Skip=2Tokens=1-2*" %A In ('Reg Query HKCU\Environment /V PATH 2^>Nul') Do @Echo %A=%C`;
+    exec(command, (error, stdout, stderr) => {
       if (error) {
         reject(error); return;
       }
       if (stderr) {
         reject(stderr); return;
       }
-      resolve();
+      resolve(stdout);
+    });
+  });
+}
+async function addFolderToPathVariableWin(folder) {
+  let pathVar = await getWinUserPATHVar();
+  let contains = pathVar.indexOf(folder);
+  if(contains != -1) {
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    let command = `setx PATH "${pathVar};${folder}"`;
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        reject(error); return;
+      }
+      if (stderr) {
+        reject(stderr); return;
+      }
+      resolve(stdout);
     });
   });
 }
