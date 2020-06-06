@@ -2,45 +2,22 @@ const { Builder, By, Key, until } = require('selenium-webdriver');
 const fs = require('fs');
 const http = require('http');
 const https = require('https');
-const safari = require('selenium-webdriver/safari');
-const chrome = require('selenium-webdriver/chrome');
-const { exec } = require('child_process');
+const child_process = require('child_process');
+const { exec } = child_process;
 const unzipper = require('unzipper')
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 // const chromeDriverDownloads = 'http://chromedriver.storage.googleapis.com/index.html';
 const fileLoc = '/Users/swittkongdachalert/Downloads/liceTrimmed copy.txt';
-
+const {search} = require('./blastSearch.js');
 
 async function main() {
-  let safariOptions = new safari.Options();
-  let chromeOpts = new chrome.Options();
-  chromeOpts.headless();
-  chromeOpts.setChromeBinaryPath(chromePath);
-  await getAppropriateDriverVersion();
-  let driver = await new Builder().forBrowser('chrome')
-    .setChromeOptions(chromeOpts)
-    .build();
-  try {
-    await driver.get('https://blast.ncbi.nlm.nih.gov/blast/Blast.cgi?PROGRAM=blastn&PAGE_TYPE=BlastSearch');
-    await driver.findElement(By.name('QUERYFILE')).sendKeys(fileLoc);
-    await (await driver.findElement(By.id('b1'))).click();
-    await driver.wait(until.elementLocated(By.id('ulDnldAl')));
-    let allDlList = await driver.findElement(By.id('allDownload'));
-    let txtDlElem = await allDlList.findElement(By.xpath('//a[contains(@href,"FORMAT_TYPE=Text")]'));
-    let jsonDlElem = await allDlList.findElement(By.xpath('//a[contains(@href,"FORMAT_TYPE=JSON2_S")]'));
-
-    let jsonDlLink = await jsonDlElem.getAttribute('href');
-    let txtDlLink = await txtDlElem.getAttribute('href');
-    // await driver.wait(until.titleIs('webdriver - Google Search'), 100000);
-    console.log(`dl links JSON:${jsonDlLink} TXT:${txtDlLink}`);
-    await Promise.all([
-      download(jsonDlLink, './jsonDat.json'),
-      download(txtDlLink, './textDat.txt')
-    ]);
-    console.log('done downloads');
-  } finally {
-    // await driver.quit();
-  }
+  let res = await getAppropriateDriverVersion();
+  if(res > 0 && process.platform == 'win32') {
+    console.log('Installed Driver, please relaunch the shell to enter the program');
+    return;
+  } 
+  // await blastSearch();
+  await search(fileLoc);
 };
 
 main();
@@ -109,10 +86,6 @@ async function download(url, filePath) {
 async function getAppropriateDriverVersion() {
   console.log('Checking chromedriver version compatibility');
   let cv = await getChromeVersion().catch((error) => {
-    let msg = error.toString();
-    if (msg.indexOf('No such file or directory') !== -1) {
-      console.log('\nGoogle Chrome is not installed in the expected location; aborting\n');
-    }
     throw error;
   });
   let cdv = await getChromeDriverVersion();
@@ -145,18 +118,19 @@ async function getAppropriateDriverVersion() {
     }
     else {//if(process.platform == 'win32') {
       let appdata = process.env.APPDATA; //Appdata folder for windows (C:\Users\user\AppData\Roaming for win8, C:\Documents and Settings\user\Application Data for winXP)
-      dest = `${appdata}\\ChromeDriver\\`;
+      dest = `${appdata}\\ChromeDriver`;
       fs.mkdirSync(dest, { recursive: true });
       console.log(`Extracting driver to ${dest}`);
       await extractFromPathTo('./temp/chromedriver.zip', dest);
       await addFolderToPathVariableWin(dest);
     }
     console.log('Done installing chromedriver');
+    return 1;
   }
   else {
     console.log(`Chromedriver ${dmainver} is compatible with current installation of Chrome ${cmainver}`);
+    return 0;
   }
-  return;
 }
 
 async function extractFromPathTo(fromPath, toPath) {
@@ -179,6 +153,11 @@ async function getChromeVersion() {
     return new Promise((resolve, reject) => {
       exec(`"${chromePath}" --version`, (error, stdout, stderr) => {
         if (error) {
+          let msg = error.toString();
+          if (msg.indexOf('No such file or directory') !== -1) {
+            console.log('\nGoogle Chrome is not installed in the expected location; aborting\n');
+            reject('ChromeNotInstalled'); return;
+          }
           reject(error); return;
         }
         if (stderr) {
@@ -195,6 +174,11 @@ async function getChromeVersion() {
     return new Promise((resolve, reject) => {
       exec(`reg query "HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon" /v version`, (error, stdout, stderr) => {
         if (error) {
+          let err = error.toString();
+          if(err.indexOf('unable to find') != -1) {
+            console.log('\nGoogle chrome is not installed in the expected directory')
+            reject('ChromeNotInstalled'); return;
+          }
           reject(error); return;
         }
         if (stderr) {
@@ -238,7 +222,60 @@ async function getChromeDriverVersion() {
  */
 async function getWinUserPATHVar() {
   return new Promise((resolve, reject)=>{
-    let command = `For /F "Skip=2Tokens=1-2*" %A In ('Reg Query HKCU\Environment /V PATH 2^>Nul') Do @Echo %A=%C`;
+    let command = `For /F "Skip=2Tokens=1-2*" %A In ('Reg Query HKCU\\Environment /V PATH 2^>Nul') Do @Echo %A=%C`;
+    exec(command, {shell:'cmd.exe'}, (error, stdout, stderr) => {
+      if (error) {
+        reject(error); return;
+      }
+      if (stderr) {
+        reject(stderr); return;
+      }
+      const prefix = 'PATH=';
+      if(stdout.indexOf(prefix) != -1) {
+        resolve(stdout.slice(prefix.length).trim());
+      }
+      resolve(stdout);
+    });
+  });
+}
+async function addFolderToPathVariableWin(folder) {
+  let pathVar = await getWinUserPATHVar();
+  console.log(`Current PathVar = ${pathVar}, looking for ${folder}`);
+  let contains = pathVar.indexOf(folder);
+  if(contains != -1) {
+    console.log('already contains folder!');
+    return;
+  }
+
+  let command = `setx PATH "${pathVar};${folder}"`;
+  console.log('path add command is ',command);
+  let result = await asyncExec(command);
+  console.log('Add path to PATH variable : status ', result);
+  let command2 = `set "PATH=${pathVar};${folder}"`;
+  let result2 = await asyncExec(command2);
+  console.log('Add path to current process : status ', result2);
+}
+
+/**
+ * @param {String} command 
+ * @param {Object?} options
+ */
+async function asyncExec(command, options) {
+  if(options) {
+    return new Promise((resolve, reject) => {
+      exec(command, options, (error, stdout, stderr) => {
+        if (error) {
+          reject(error); return;
+        }
+        if (stderr) {
+          reject(stderr); return;
+        }
+        resolve(stdout);
+      });
+    });  
+  }
+
+  return new Promise((resolve, reject) => {
     exec(command, (error, stdout, stderr) => {
       if (error) {
         reject(error); return;
@@ -250,23 +287,10 @@ async function getWinUserPATHVar() {
     });
   });
 }
-async function addFolderToPathVariableWin(folder) {
-  let pathVar = await getWinUserPATHVar();
-  let contains = pathVar.indexOf(folder);
-  if(contains != -1) {
-    return;
-  }
 
-  return new Promise((resolve, reject) => {
-    let command = `setx PATH "${pathVar};${folder}"`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        reject(error); return;
-      }
-      if (stderr) {
-        reject(stderr); return;
-      }
-      resolve(stdout);
-    });
+function promiseFromChildProcess(child) {
+  return new Promise(function (resolve, reject) {
+      child.addListener("error", reject);
+      child.addListener("exit", resolve);
   });
 }
